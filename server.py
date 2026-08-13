@@ -19,7 +19,7 @@ from pipecat.services.deepgram.stt import DeepgramSTTService
 from pipecat.services.deepgram.tts import DeepgramTTSService
 from pipecat.services.openai.llm import OpenAILLMService
 from pipecat.transports.base_transport import TransportParams
-from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection
+from pipecat.transports.smallwebrtc.connection import IceServer, SmallWebRTCConnection
 from pipecat.transports.smallwebrtc.request_handler import (
     SmallWebRTCPatchRequest,
     SmallWebRTCRequest,
@@ -40,7 +40,13 @@ logger.add(sys.stderr, level="DEBUG")
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 
 app = FastAPI()
-webrtc_handler = SmallWebRTCRequestHandler()
+# Without a STUN server here, aiortc only advertises the container's private
+# internal IP as an ICE candidate, so a real remote browser can never actually
+# reach it (ICE gets stuck at "checking" forever) — the client already had a
+# STUN server configured, but the server side needs one too.
+webrtc_handler = SmallWebRTCRequestHandler(
+    ice_servers=[IceServer(urls="stun:stun.l.google.com:19302")]
+)
 
 
 @app.get("/")
