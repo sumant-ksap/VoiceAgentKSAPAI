@@ -1,0 +1,2 @@
+pipecat-ai[deepgram,kokoro,silero,webrtc,runner]==1.7.0
+python-dotenv==1.2.2

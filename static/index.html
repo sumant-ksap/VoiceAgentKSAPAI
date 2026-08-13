@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KSAP AI Desktop Support</title>
+<style>
+    * { box-sizing: border-box; }
+
+    body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(135deg, #111827, #1e293b);
+        font-family: Arial, sans-serif;
+        color: white;
+    }
+
+    .card {
+        width: 480px;
+        max-width: 95vw;
+        height: 640px;
+        max-height: 92vh;
+        padding: 24px;
+        background: #1f2937;
+        border-radius: 20px;
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
+        display: flex;
+        flex-direction: column;
+    }
+
+    .header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 12px;
+    }
+
+    .logo { font-size: 34px; }
+
+    h1 { margin: 0; font-size: 19px; }
+
+    .subtitle { color: #9ca3af; font-size: 12px; margin-top: 2px; }
+
+    #status {
+        margin-left: auto;
+        padding: 6px 12px;
+        border-radius: 999px;
+        background: #111827;
+        color: #d1d5db;
+        font-size: 12px;
+        white-space: nowrap;
+    }
+
+    #chat {
+        flex: 1;
+        overflow-y: auto;
+        background: #111827;
+        border-radius: 12px;
+        padding: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        margin-bottom: 12px;
+    }
+
+    .bubble {
+        max-width: 80%;
+        padding: 10px 14px;
+        border-radius: 14px;
+        font-size: 14px;
+        line-height: 1.4;
+        white-space: pre-wrap;
+    }
+
+    .bubble.user {
+        align-self: flex-end;
+        background: #2563eb;
+        color: white;
+        border-bottom-right-radius: 4px;
+    }
+
+    .bubble.bot {
+        align-self: flex-start;
+        background: #374151;
+        color: #f3f4f6;
+        border-bottom-left-radius: 4px;
+    }
+
+    .bubble.system {
+        align-self: center;
+        background: transparent;
+        color: #6b7280;
+        font-size: 12px;
+    }
+
+    .controls {
+        display: flex;
+        gap: 8px;
+    }
+
+    #textInput {
+        flex: 1;
+        padding: 12px 14px;
+        border-radius: 10px;
+        border: none;
+        background: #111827;
+        color: white;
+        font-size: 14px;
+    }
+
+    #textInput:disabled { opacity: 0.5; }
+
+    button {
+        border: none;
+        border-radius: 10px;
+        font-size: 14px;
+        font-weight: bold;
+        cursor: pointer;
+        padding: 12px 16px;
+    }
+
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    #sendBtn { background: #2563eb; color: white; }
+    #sendBtn:hover:not(:disabled) { background: #1d4ed8; }
+
+    #micBtn { background: #22c55e; color: white; min-width: 90px; }
+    #micBtn:hover:not(:disabled) { background: #16a34a; }
+    #micBtn.active { background: #ef4444; }
+    #micBtn.active:hover:not(:disabled) { background: #dc2626; }
+</style>
+</head>
+<body>
+
+<div class="card">
+    <div class="header">
+        <div class="logo">🎧</div>
+        <div>
+            <h1>KSAP AI Desktop Support</h1>
+            <div class="subtitle">Voice &amp; chat assistant</div>
+        </div>
+        <div id="status">🟡 Not connected</div>
+    </div>
+
+    <div id="chat"></div>
+
+    <div class="controls">
+        <button id="micBtn">🎙️ Start</button>
+        <input id="textInput" type="text" placeholder="Type a message..." disabled>
+        <button id="sendBtn" disabled>Send</button>
+    </div>
+</div>
+
+<audio id="botAudio" autoplay></audio>
+
+<script type="module">
+import { PipecatClient, RTVIEvent } from "https://cdn.jsdelivr.net/npm/@pipecat-ai/client-js@1.13.0/+esm";
+import { SmallWebRTCTransport } from "https://cdn.jsdelivr.net/npm/@pipecat-ai/small-webrtc-transport@1.10.6/+esm";
+
+const statusEl = document.getElementById("status");
+const chatEl = document.getElementById("chat");
+const micBtn = document.getElementById("micBtn");
+const textInput = document.getElementById("textInput");
+const sendBtn = document.getElementById("sendBtn");
+const botAudio = document.getElementById("botAudio");
+
+let currentBotBubble = null;
+
+function addBubble(text, role) {
+    const el = document.createElement("div");
+    el.className = "bubble " + role;
+    el.textContent = text;
+    chatEl.appendChild(el);
+    chatEl.scrollTop = chatEl.scrollHeight;
+    return el;
+}
+
+function setStatus(text) {
+    statusEl.textContent = text;
+}
+
+const client = new PipecatClient({
+    transport: new SmallWebRTCTransport({
+        iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+    }),
+    enableMic: true,
+    enableCam: false,
+    callbacks: {
+        onConnected: () => setStatus("🟡 Connecting..."),
+        onBotReady: () => {
+            setStatus("🟢 Connected");
+            textInput.disabled = false;
+            sendBtn.disabled = false;
+            micBtn.textContent = "🔴 Stop";
+            micBtn.classList.add("active");
+            addBubble("Connected — say something or type a message.", "system");
+        },
+        onDisconnected: () => {
+            setStatus("🟡 Not connected");
+            textInput.disabled = true;
+            sendBtn.disabled = true;
+            micBtn.textContent = "🎙️ Start";
+            micBtn.classList.remove("active");
+            currentBotBubble = null;
+        },
+        onError: (err) => {
+            console.error("Pipecat error:", err);
+            setStatus("❌ Error");
+        },
+        onTrackStarted: (track) => {
+            // SmallWebRTCTransport is peer-to-peer (no room/participants), so it
+            // calls onTrackStarted with just the track — every remote track here
+            // is the bot's, there's no "local" participant to filter out.
+            if (track.kind === "audio") {
+                botAudio.srcObject = new MediaStream([track]);
+            }
+        },
+    },
+});
+
+client.on(RTVIEvent.UserTranscript, (data) => {
+    if (data.final) {
+        currentBotBubble = null;
+        addBubble(data.text, "user");
+    }
+});
+
+client.on(RTVIEvent.BotOutput, (data) => {
+    if (!currentBotBubble) {
+        currentBotBubble = addBubble(data.text, "bot");
+    } else {
+        currentBotBubble.textContent += " " + data.text;
+    }
+    chatEl.scrollTop = chatEl.scrollHeight;
+});
+
+client.on(RTVIEvent.UserStartedSpeaking, () => {
+    currentBotBubble = null;
+});
+
+micBtn.addEventListener("click", async () => {
+    if (client.connected) {
+        await client.disconnect();
+        return;
+    }
+    try {
+        setStatus("🟡 Connecting...");
+        await client.connect({ webrtcUrl: "/api/offer" });
+    } catch (err) {
+        console.error("Connection failed:", err);
+        setStatus("❌ Connection failed");
+    }
+});
+
+async function sendTypedMessage() {
+    const text = textInput.value.trim();
+    if (!text || !client.connected) return;
+    addBubble(text, "user");
+    currentBotBubble = null;
+    textInput.value = "";
+    try {
+        await client.sendText(text);
+    } catch (err) {
+        console.error("sendText failed:", err);
+    }
+}
+
+sendBtn.addEventListener("click", sendTypedMessage);
+textInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") sendTypedMessage();
+});
+</script>
+
+</body>
+</html>
