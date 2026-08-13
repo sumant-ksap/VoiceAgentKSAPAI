@@ -5,4 +5,4 @@ venv/
 .env copy.example
 __pycache__/
 .claude/
-server_test.log
+server_test*.log

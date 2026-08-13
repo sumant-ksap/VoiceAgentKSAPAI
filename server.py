@@ -1,4 +1,3 @@
-import asyncio
 import os
 import sys
 
@@ -17,7 +16,7 @@ from pipecat.processors.aggregators.llm_response_universal import (
     LLMUserAggregatorParams,
 )
 from pipecat.services.deepgram.stt import DeepgramSTTService
-from pipecat.services.kokoro.tts import KOKORO_CACHE_DIR, KokoroTTSService, _ensure_model_files
+from pipecat.services.deepgram.tts import DeepgramTTSService
 from pipecat.services.openai.llm import OpenAILLMService
 from pipecat.transports.base_transport import TransportParams
 from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection
@@ -44,16 +43,6 @@ app = FastAPI()
 webrtc_handler = SmallWebRTCRequestHandler()
 
 
-@app.on_event("startup")
-async def prewarm_kokoro():
-    # Kokoro's model download (~350MB, first boot only) is a blocking synchronous
-    # call. Running it here means it blocks server startup instead of blocking
-    # the event loop mid-session for whichever user's connection triggers it.
-    model_file = KOKORO_CACHE_DIR / "kokoro-v1.0.onnx"
-    voices_file = KOKORO_CACHE_DIR / "voices-v1.0.bin"
-    await asyncio.to_thread(_ensure_model_files, model_file, voices_file)
-
-
 @app.get("/")
 async def index():
     return FileResponse(os.path.join(STATIC_DIR, "index.html"))
@@ -62,9 +51,10 @@ async def index():
 async def run_bot(transport: SmallWebRTCTransport):
     stt = DeepgramSTTService(api_key=os.environ["DEEPGRAM_API_KEY"])
 
-    tts = KokoroTTSService(
-        settings=KokoroTTSService.Settings(
-            voice=os.environ.get("KOKORO_VOICE", "af_heart"),
+    tts = DeepgramTTSService(
+        api_key=os.environ["DEEPGRAM_API_KEY"],
+        settings=DeepgramTTSService.Settings(
+            voice=os.environ.get("DEEPGRAM_TTS_VOICE", "aura-2-helena-en"),
         ),
     )
 

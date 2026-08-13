@@ -12,7 +12,7 @@ services:
         sync: false
       - key: OLLAMA_API_KEY
         sync: false
-      - key: KOKORO_VOICE
-        value: af_heart
+      - key: DEEPGRAM_TTS_VOICE
+        value: aura-2-helena-en
       - key: OLLAMA_CLOUD_MODEL
         value: gemma4:31b-cloud
