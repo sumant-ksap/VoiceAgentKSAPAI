@@ -154,18 +154,15 @@
     </div>
 </div>
 
-<audio id="botAudio" autoplay></audio>
-
 <script type="module">
 import { PipecatClient, RTVIEvent } from "https://cdn.jsdelivr.net/npm/@pipecat-ai/client-js@1.13.0/+esm";
-import { SmallWebRTCTransport } from "https://cdn.jsdelivr.net/npm/@pipecat-ai/small-webrtc-transport@1.10.6/+esm";
+import { WebSocketTransport } from "https://cdn.jsdelivr.net/npm/@pipecat-ai/websocket-transport@1.7.1/+esm";
 
 const statusEl = document.getElementById("status");
 const chatEl = document.getElementById("chat");
 const micBtn = document.getElementById("micBtn");
 const textInput = document.getElementById("textInput");
 const sendBtn = document.getElementById("sendBtn");
-const botAudio = document.getElementById("botAudio");
 
 let currentBotBubble = null;
 
@@ -183,9 +180,10 @@ function setStatus(text) {
 }
 
 const client = new PipecatClient({
-    transport: new SmallWebRTCTransport({
-        iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
-    }),
+    // WebSocketTransport plays remote audio itself (Web Audio API) rather
+    // than exposing a MediaStreamTrack, so outputToSpeakers handles playback
+    // — no <audio> element or onTrackStarted wiring needed.
+    transport: new WebSocketTransport({ outputToSpeakers: true }),
     enableMic: true,
     enableCam: false,
     callbacks: {
@@ -209,14 +207,6 @@ const client = new PipecatClient({
         onError: (err) => {
             console.error("Pipecat error:", err);
             setStatus("❌ Error");
-        },
-        onTrackStarted: (track) => {
-            // SmallWebRTCTransport is peer-to-peer (no room/participants), so it
-            // calls onTrackStarted with just the track — every remote track here
-            // is the bot's, there's no "local" participant to filter out.
-            if (track.kind === "audio") {
-                botAudio.srcObject = new MediaStream([track]);
-            }
         },
     },
 });
@@ -248,7 +238,8 @@ micBtn.addEventListener("click", async () => {
     }
     try {
         setStatus("🟡 Connecting...");
-        await client.connect({ webrtcUrl: "/api/offer" });
+        const wsProtocol = location.protocol === "https:" ? "wss:" : "ws:";
+        await client.connect({ ws_url: `${wsProtocol}//${location.host}/ws` });
     } catch (err) {
         console.error("Connection failed:", err);
         setStatus("❌ Connection failed");

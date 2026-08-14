@@ -2,7 +2,7 @@ import os
 import sys
 
 from dotenv import load_dotenv
-from fastapi import BackgroundTasks, FastAPI
+from fastapi import FastAPI, WebSocket
 from fastapi.responses import FileResponse
 from loguru import logger
 
@@ -15,17 +15,11 @@ from pipecat.processors.aggregators.llm_response_universal import (
     LLMContextAggregatorPair,
     LLMUserAggregatorParams,
 )
+from pipecat.serializers.protobuf import ProtobufFrameSerializer
 from pipecat.services.deepgram.stt import DeepgramSTTService
 from pipecat.services.deepgram.tts import DeepgramTTSService
 from pipecat.services.openai.llm import OpenAILLMService
-from pipecat.transports.base_transport import TransportParams
-from pipecat.transports.smallwebrtc.connection import IceServer, SmallWebRTCConnection
-from pipecat.transports.smallwebrtc.request_handler import (
-    SmallWebRTCPatchRequest,
-    SmallWebRTCRequest,
-    SmallWebRTCRequestHandler,
-)
-from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
+from pipecat.transports.websocket.fastapi import FastAPIWebsocketParams, FastAPIWebsocketTransport
 from pipecat.turns.user_stop.speech_timeout_user_turn_stop_strategy import (
     SpeechTimeoutUserTurnStopStrategy,
 )
@@ -40,13 +34,6 @@ logger.add(sys.stderr, level="DEBUG")
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 
 app = FastAPI()
-# Without a STUN server here, aiortc only advertises the container's private
-# internal IP as an ICE candidate, so a real remote browser can never actually
-# reach it (ICE gets stuck at "checking" forever) — the client already had a
-# STUN server configured, but the server side needs one too.
-webrtc_handler = SmallWebRTCRequestHandler(
-    ice_servers=[IceServer(urls="stun:stun.l.google.com:19302")]
-)
 
 
 @app.get("/")
@@ -54,7 +41,7 @@ async def index():
     return FileResponse(os.path.join(STATIC_DIR, "index.html"))
 
 
-async def run_bot(transport: SmallWebRTCTransport):
+async def run_bot(transport: FastAPIWebsocketTransport):
     stt = DeepgramSTTService(api_key=os.environ["DEEPGRAM_API_KEY"])
 
     tts = DeepgramTTSService(
@@ -94,12 +81,12 @@ async def run_bot(transport: SmallWebRTCTransport):
 
     pipeline = Pipeline(
         [
-            transport.input(),  # Mic in (via browser WebRTC)
+            transport.input(),  # Mic in (via browser WebSocket)
             stt,  # Speech -> text
             user_aggregator,  # Add user turn to context
             llm,  # Text -> LLM response (Ollama Cloud)
             tts,  # Text -> speech
-            transport.output(),  # Speaker out (via browser WebRTC)
+            transport.output(),  # Speaker out (via browser WebSocket)
             assistant_aggregator,  # Add assistant turn to context
         ]
     )
@@ -131,33 +118,21 @@ async def run_bot(transport: SmallWebRTCTransport):
     await runner.run()
 
 
-@app.post("/api/offer")
-async def offer(request: SmallWebRTCRequest, background_tasks: BackgroundTasks):
-    async def webrtc_connection_callback(connection: SmallWebRTCConnection):
-        transport = SmallWebRTCTransport(
-            webrtc_connection=connection,
-            params=TransportParams(
-                audio_in_enabled=True,
-                audio_out_enabled=True,
-            ),
-        )
-        background_tasks.add_task(run_bot, transport)
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
 
-    return await webrtc_handler.handle_web_request(
-        request=request,
-        webrtc_connection_callback=webrtc_connection_callback,
+    transport = FastAPIWebsocketTransport(
+        websocket=websocket,
+        params=FastAPIWebsocketParams(
+            audio_in_enabled=True,
+            audio_out_enabled=True,
+            add_wav_header=False,
+            serializer=ProtobufFrameSerializer(),
+        ),
     )
 
-
-@app.patch("/api/offer")
-async def offer_patch(request: SmallWebRTCPatchRequest):
-    await webrtc_handler.handle_patch_request(request)
-    return {"status": "success"}
-
-
-@app.on_event("shutdown")
-async def shutdown():
-    await webrtc_handler.close()
+    await run_bot(transport)
 
 
 if __name__ == "__main__":
